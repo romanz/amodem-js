@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>AudioBuffer example</title>
+  </head>
+
+  <body>
+    <button>Play</button>
+    <pre></pre>
+  </body>
+<script>
+var audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+var button = document.querySelector('button');
+var pre = document.querySelector('pre');
+
+var channels = 1;
+var Fs = audioCtx.sampleRate
+var Fc = Fs / 4.0
+var Nsym = 36;
+var baud = Fs / Nsym;
+
+var frameCount = Fs * 0.5;
+
+log = function(msg) {
+	pre.innerHTML += ("\n" + msg);
+}
+
+log("Fs: " + Fs);
+log("baud: " + baud);
+
+button.onclick = function() {
+	var src = audioCtx.createBuffer(1, frameCount, audioCtx.sampleRate);
+	var buf = src.getChannelData(0);
+	var t = 0;
+	for (var i = 0; i < frameCount / Nsym; i++) {
+		for (var j = 0; j < Nsym; j++) {
+			var a = 0.1;
+			if (i > 300) {
+				a = 0.2;
+			}
+			buf[t] = a * Math.sin(2 * Math.PI * Fc * t / Fs);
+			t++;
+		}
+	}
+	log("symbols: " + i);
+
+	var source = audioCtx.createBufferSource();
+	source.buffer = src;
+	source.connect(audioCtx.destination);
+	source.start();
+}
+</script>
+</html>
