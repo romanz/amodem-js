@@ -2,52 +2,142 @@
 <html>
   <head>
     <meta charset="utf-8">
-    <title>AudioBuffer example</title>
+    <title>AudioModem</title>
   </head>
 
   <body>
-    <button>Play</button>
+    <textarea></textarea><br/>
+    <button>send</button>
     <pre></pre>
   </body>
 <script>
-var audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+var textarea = document.querySelector('textarea');
 var button = document.querySelector('button');
 var pre = document.querySelector('pre');
 
+var ctx = new (window.AudioContext || window.webkitAudioContext)();
 var channels = 1;
-var Fs = audioCtx.sampleRate
+var Fs = ctx.sampleRate
 var Fc = Fs / 4.0
 var Nsym = 36;
 var baud = Fs / Nsym;
 
-var frameCount = Fs * 0.5;
+var frameCount = Fs * 10;
+var symbol_map = []
+for (var s of [0, 1]) {
+	var symbol = new Array(Nsym);
+	var amp = (2 * s - 1);
+	for (var i = 0; i < Nsym; i++) {
+		symbol[i] = amp * Math.sin(2 * Math.PI * Fc * i / Fs)
+	}
+	symbol_map[s] = symbol;
+}
 
-log = function(msg) {
+function log(msg) {
 	pre.innerHTML += ("\n" + msg);
 }
 
 log("Fs: " + Fs);
 log("baud: " + baud);
 
-button.onclick = function() {
-	var src = audioCtx.createBuffer(1, frameCount, audioCtx.sampleRate);
-	var buf = src.getChannelData(0);
-	var t = 0;
-	for (var i = 0; i < frameCount / Nsym; i++) {
-		for (var j = 0; j < Nsym; j++) {
-			var a = 0.1;
-			if (i > 300) {
-				a = 0.2;
-			}
-			buf[t] = a * Math.sin(2 * Math.PI * Fc * t / Fs);
-			t++;
+var _cos = [1, 0, -1, 0];
+var _sin = [0, 1, 0, -1];
+var _period = 4;
+var _frame_size = 250;
+
+function modulate(signal, data) {
+	var offset = 0;
+	function write(real, imag) {
+		for (var i = 0; i < Nsym; i++) {
+			var index = i % _period;
+			signal[offset] = real * _cos[index] - imag * _sin[index];
+			offset++;
 		}
 	}
-	log("symbols: " + i);
 
-	var source = audioCtx.createBufferSource();
+	function write_byte(x) {
+		for (var i = 0; i < 8; i++) {
+			var bit = x & (1 << i) ? 1 : 0;
+			write(0, 2 * bit - 1);
+		}
+	}
+
+	function write_long(x) {
+		for (var i of [3, 2, 1, 0]) {
+			write_byte( (x >> (8 * i)) & 0xFF );
+		}
+	}
+
+    var table = new Uint32Array(256);
+    for(var i = 256; i--;)
+    {
+        var tmp = i;
+        for(var k = 8; k--;) {
+            tmp = tmp & 1 ? 0xedb88320 ^ tmp >>> 1 : tmp >>> 1;
+        }
+        table[i] = tmp;
+    }
+
+	function crc32(data, offset, size) {
+        var crc = 0xffffffff;
+        for(var i = 0; i < size; i++) {
+            crc = crc >>> 8 ^ table[ crc & 0xff ^ data[offset + i] ];
+        }
+        return (crc ^ -1) >>> 0; // Apply binary NOT
+	}
+
+    for (var i = 0; i < 100; i++)
+        write(0, 0);
+    for (var i = 0; i < 400; i++)
+        write(1, 0);
+    for (var i = 0; i < 150; i++)
+        write(0, 0);
+    for (var register = 0x1, i = 0; i < 500; i++) {
+        var k = (i < 16) ? 0 : (register & 3);
+        write(_cos[k], _sin[k]);
+        register = register << 1;
+        if (register >> 16 != 0) {
+            register = register ^ 0x1100b;
+        }
+    }
+    for (var i = 0; i < 100; i++)
+        write(0, 0);
+
+    var frames = 0;
+    for (var i = 0; i < data.length; i++) {
+        if (i % _frame_size == 0) {
+            var size = Math.min(_frame_size, data.length - i);
+            write_byte(size + 4);
+            var checksum = crc32(data, i, size);
+            write_long(checksum);
+	        frames++;
+        }
+        write_byte(data[i]);
+    }
+    // log("frames: " + frames);
+    write_byte(4);
+    write_long(0);
+
+    return offset;
+}
+
+button.onclick = function() {
+
+	var src = ctx.createBuffer(1, frameCount, ctx.sampleRate);
+	var sig = src.getChannelData(0)
+
+	var data = textarea.value.split("");
+	data = data.map(function (s) { return s.charCodeAt(0); });
+	// log("\ndata: " + data.length + " bytes");
+	var offset = modulate(sig, data);
+	// log("audio: " + (offset / Fs).toFixed(3) + " seconds");
+	if (offset >= sig.length) {
+		return;
+	}
+
+	var source = ctx.createBufferSource();
 	source.buffer = src;
-	source.connect(audioCtx.destination);
+	source.connect(ctx.destination);
 	source.start();
 }
 </script>
