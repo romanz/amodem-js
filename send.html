@@ -6,7 +6,7 @@
   </head>
 
   <body>
-    <textarea></textarea><br/>
+    <textarea rows="10" cols="25"></textarea><br/>
     <button>send</button>
     <pre></pre>
   </body>
@@ -19,10 +19,12 @@ var ctx = new (window.AudioContext || window.webkitAudioContext)();
 var channels = 1;
 var Fs = ctx.sampleRate
 var Fc = Fs / 4.0
-var Nsym = 36;
+var Nsym = 32;
+while (Math.round(Fs / Nsym) * Nsym != Fs) {
+	Nsym += 4;
+}
 var baud = Fs / Nsym;
 
-var frameCount = Fs * 10;
 var symbol_map = []
 for (var s of [0, 1]) {
 	var symbol = new Array(Nsym);
@@ -38,7 +40,8 @@ function log(msg) {
 }
 
 log("Fs: " + Fs);
-log("baud: " + baud);
+log("Nsym: " + Nsym);
+log("kbps: " + baud / 1e3);
 
 var _cos = [1, 0, -1, 0];
 var _sin = [0, 1, 0, -1];
@@ -123,11 +126,13 @@ function modulate(signal, data) {
 
 button.onclick = function() {
 
+	var data = textarea.value.split("");
+	data = data.map(function (s) { return s.charCodeAt(0); });
+
+	var frameCount = 10 * (data.length / baud) + 2 * Fs;
 	var src = ctx.createBuffer(1, frameCount, ctx.sampleRate);
 	var sig = src.getChannelData(0)
 
-	var data = textarea.value.split("");
-	data = data.map(function (s) { return s.charCodeAt(0); });
 	// log("\ndata: " + data.length + " bytes");
 	var offset = modulate(sig, data);
 	// log("audio: " + (offset / Fs).toFixed(3) + " seconds");
