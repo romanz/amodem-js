@@ -18,22 +18,9 @@ var pre = document.querySelector('pre');
 var ctx = new (window.AudioContext || window.webkitAudioContext)();
 var channels = 1;
 var Fs = ctx.sampleRate
-var Fc = Fs / 4.0
-var Nsym = 32;
-while (Math.round(Fs / Nsym) * Nsym != Fs) {
-	Nsym += 4;
-}
+var Fc = 2000;
+var Nsym = 48;
 var baud = Fs / Nsym;
-
-var symbol_map = []
-for (var s of [0, 1]) {
-	var symbol = new Array(Nsym);
-	var amp = (2 * s - 1);
-	for (var i = 0; i < Nsym; i++) {
-		symbol[i] = amp * Math.sin(2 * Math.PI * Fc * i / Fs)
-	}
-	symbol_map[s] = symbol;
-}
 
 function log(msg) {
 	pre.innerHTML += ("\n" + msg);
@@ -41,19 +28,21 @@ function log(msg) {
 
 log("Fs: " + Fs);
 log("Nsym: " + Nsym);
-log("kbps: " + baud / 1e3);
+log("kb/s: " + baud / 1e3);
 
-var _cos = [1, 0, -1, 0];
-var _sin = [0, 1, 0, -1];
-var _period = 4;
+var _cos = new Float32Array(Nsym);
+var _sin = new Float32Array(Nsym);
+for (var i = 0; i < Nsym; ++i) {
+	_cos[i] = Math.cos(2 * Math.PI * Fc * i / Fs);
+	_sin[i] = Math.sin(2 * Math.PI * Fc * i / Fs);
+}
 var _frame_size = 250;
 
 function modulate(signal, data) {
 	var offset = 0;
 	function write(real, imag) {
 		for (var i = 0; i < Nsym; i++) {
-			var index = i % _period;
-			signal[offset] = real * _cos[index] - imag * _sin[index];
+			signal[offset] = real * _cos[i] - imag * _sin[i];
 			offset++;
 		}
 	}
@@ -95,9 +84,12 @@ function modulate(signal, data) {
         write(1, 0);
     for (var i = 0; i < 150; i++)
         write(0, 0);
+
+    _training = [[1, 0], [0, 1], [-1, 0], [0, -1]]
     for (var register = 0x1, i = 0; i < 500; i++) {
         var k = (i < 16) ? 0 : (register & 3);
-        write(_cos[k], _sin[k]);
+        var sym = _training[k];
+        write(sym[0], sym[1]);
         register = register << 1;
         if (register >> 16 != 0) {
             register = register ^ 0x1100b;
